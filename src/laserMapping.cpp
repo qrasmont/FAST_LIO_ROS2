@@ -99,6 +99,7 @@ bool   point_selected_surf[100000] = {0};
 bool   lidar_pushed, flg_first_scan = true, flg_exit = false, flg_EKF_inited;
 bool   scan_pub_en = false, dense_pub_en = false, scan_body_pub_en = false;
 bool    is_first_lidar = true;
+string log_path = string(string(ROOT_DIR) + "Log/");
 
 vector<vector<int>>  pointSearchInd_surf; 
 vector<BoxPointType> cub_needrm;
@@ -142,7 +143,7 @@ geometry_msgs::msg::Quaternion geoQuat;
 geometry_msgs::msg::PoseStamped msg_body_pose;
 
 shared_ptr<Preprocess> p_pre(new Preprocess());
-shared_ptr<ImuProcess> p_imu(new ImuProcess());
+std::shared_ptr<ImuProcess> p_imu;
 
 void SigHandle(int sig)
 {
@@ -833,6 +834,7 @@ public:
         this->declare_parameter<int>("pcd_save.interval", -1);
         this->declare_parameter<vector<double>>("mapping.extrinsic_T", vector<double>());
         this->declare_parameter<vector<double>>("mapping.extrinsic_R", vector<double>());
+        this->declare_parameter<string>("log_path", string(string(ROOT_DIR) + "Log/"));
 
         this->get_parameter_or<bool>("publish.path_en", path_en, true);
         this->get_parameter_or<bool>("publish.effect_map_en", effect_pub_en, false);
@@ -870,6 +872,7 @@ public:
         this->get_parameter_or<int>("pcd_save.interval", pcd_save_interval, -1);
         this->get_parameter_or<vector<double>>("mapping.extrinsic_T", extrinT, vector<double>());
         this->get_parameter_or<vector<double>>("mapping.extrinsic_R", extrinR, vector<double>());
+        this->get_parameter_or<string>("log_path", log_path, string(string(ROOT_DIR) + "Log/"));
 
         RCLCPP_INFO(this->get_logger(), "p_pre->lidar_type %d", p_pre->lidar_type);
 
@@ -893,6 +896,7 @@ public:
         memset(point_selected_surf, true, sizeof(point_selected_surf));
         memset(res_last, -1000.0f, sizeof(res_last));
 
+        p_imu = std::make_shared<ImuProcess>(log_path);
         Lidar_T_wrt_IMU<<VEC_FROM_ARRAY(extrinT);
         Lidar_R_wrt_IMU<<MAT_FROM_ARRAY(extrinR);
         p_imu->set_extrinsic(Lidar_T_wrt_IMU, Lidar_R_wrt_IMU);
@@ -905,18 +909,17 @@ public:
         kf.init_dyn_share(get_f, df_dx, df_dw, h_share_model, NUM_MAX_ITERATIONS, epsi);
 
         /*** debug record ***/
-        // FILE *fp;
-        string pos_log_dir = root_dir + "/Log/pos_log.txt";
+        string pos_log_dir = DEBUG_FILE_DIR(log_path, "pos_log.txt");
         fp = fopen(pos_log_dir.c_str(),"w");
 
         // ofstream fout_pre, fout_out, fout_dbg;
-        fout_pre.open(DEBUG_FILE_DIR("mat_pre.txt"),ios::out);
-        fout_out.open(DEBUG_FILE_DIR("mat_out.txt"),ios::out);
-        fout_dbg.open(DEBUG_FILE_DIR("dbg.txt"),ios::out);
+        fout_pre.open(DEBUG_FILE_DIR(log_path, "mat_pre.txt"),ios::out);
+        fout_out.open(DEBUG_FILE_DIR(log_path, "mat_out.txt"),ios::out);
+        fout_dbg.open(DEBUG_FILE_DIR(log_path, "dbg.txt"),ios::out);
         if (fout_pre && fout_out)
-            cout << "~~~~"<<ROOT_DIR<<" file opened" << endl;
+            cout << "~~~~" << log_path <<" file opened" << endl;
         else
-            cout << "~~~~"<<ROOT_DIR<<" doesn't exist" << endl;
+            cout << "~~~~" << log_path <<" doesn't exist" << endl;
 
         /*** ROS subscribe initialization ***/
         if (p_pre->lidar_type == AVIA)
@@ -1099,9 +1102,14 @@ private:
                 s_plot9[time_log_counter] = aver_time_consu;
                 s_plot10[time_log_counter] = add_point_size;
                 time_log_counter ++;
-                printf("[ mapping ]: time: IMU + Map + Input Downsample: %0.6f ave match: %0.6f ave solve: %0.6f  ave ICP: %0.6f  map incre: %0.6f ave total: %0.6f icp: %0.6f construct H: %0.6f \n",t1-t0,aver_time_match,aver_time_solve,t3-t1,t5-t3,aver_time_consu,aver_time_icp, aver_time_const_H_time);
+
+                fout_out << "[ mapping ]: time: IMU + Map + Input Downsample: " << std::fixed << std::setprecision(6)
+                    << t1-t0 << " ave match: " << aver_time_match << " ave solve: " << aver_time_solve
+                    << "  ave ICP: " << t3-t1 << "  map incre: " << t5-t3 << " ave total: " << aver_time_consu
+                    << " icp: " << aver_time_icp << " construct H: " << aver_time_const_H_time << std::endl;
+
                 ext_euler = SO3ToEuler(state_point.offset_R_L_I);
-                fout_out << setw(20) << Measures.lidar_beg_time - first_lidar_time << " " << euler_cur.transpose() << " " << state_point.pos.transpose()<< " " << ext_euler.transpose() << " "<<state_point.offset_T_L_I.transpose()<<" "<< state_point.vel.transpose() \
+                fout_out << Measures.lidar_beg_time - first_lidar_time << " " << euler_cur.transpose() << " " << state_point.pos.transpose()<< " " << ext_euler.transpose() << " "<<state_point.offset_T_L_I.transpose()<<" "<< state_point.vel.transpose() \
                 <<" "<<state_point.bg.transpose()<<" "<<state_point.ba.transpose()<<" "<<state_point.grav<<" "<<feats_undistort->points.size()<<endl;
                 dump_lio_state_to_log(fp);
             }
@@ -1179,7 +1187,7 @@ int main(int argc, char** argv)
 
     if (runtime_pos_log)
     {
-        vector<double> t, s_vec, s_vec2, s_vec3, s_vec4, s_vec5, s_vec6, s_vec7;    
+        vector<double> t, s_vec, s_vec2, s_vec3, s_vec4, s_vec5, s_vec6, s_vec7;
         FILE *fp2;
         string log_dir = root_dir + "/Log/fast_lio_time_log.csv";
         fp2 = fopen(log_dir.c_str(),"w");
