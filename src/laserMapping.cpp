@@ -57,12 +57,14 @@
 #include <sensor_msgs/msg/imu.hpp>
 #include <std_srvs/srv/trigger.hpp>
 #include <tf2_ros/transform_broadcaster.h>
+#include <tf2_ros/static_transform_broadcaster.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
 #include <livox_ros_driver2/msg/custom_msg.hpp>
 #include "preprocess.h"
 #include <ikd-Tree/ikd_Tree.h>
 #include <rosgraph_msgs/msg/clock.hpp>
+#include <tf2_msgs/msg/tf_message.hpp>
 
 #include <rosbag2_cpp/readers/sequential_reader.hpp>
 #include <rosbag2_storage/storage_options.hpp>
@@ -91,6 +93,8 @@ condition_variable sig_buffer;
 
 string root_dir = ROOT_DIR;
 string map_file_path, lid_topic, imu_topic;
+string tf_topic = "/tf";
+string tf_static_topic = "/tf_static";
 
 double res_mean_last = 0.05, total_residual = 0.0;
 double last_timestamp_lidar = 0, last_timestamp_imu = -1.0;
@@ -153,7 +157,8 @@ struct StampedMessage {
     double timestamp;
     sensor_msgs::msg::Imu::ConstSharedPtr imu_msg;
     PointCloudXYZI::Ptr lidar_msg;
-    string topic_name;
+    tf2_msgs::msg::TFMessage::ConstSharedPtr tf_msg;
+    string topic_name; // To distinguish message types
 
     bool operator<(const StampedMessage& other) const {
         return timestamp < other.timestamp;
@@ -966,6 +971,7 @@ public:
         pubPath_ = this->create_publisher<nav_msgs::msg::Path>("/path", 20);
         pubClock_ = this->create_publisher<rosgraph_msgs::msg::Clock>("/clock", 1);
         tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+        static_tf_broadcaster_ = std::make_unique<tf2_ros::StaticTransformBroadcaster>(*this);
 
         //------------------------------------------------------------------------------------------------------
 
@@ -1095,12 +1101,13 @@ public:
 
             reader.open(storage_options, converter_options);
             rosbag2_storage::StorageFilter filter;
-            filter.topics = {lid_topic, imu_topic};
+            filter.topics = {lid_topic, imu_topic, tf_topic, tf_static_topic};
             reader.set_filter(filter);
 
             rclcpp::Serialization<sensor_msgs::msg::Imu> imu_serialization;
             rclcpp::Serialization<livox_ros_driver2::msg::CustomMsg> livox_serialization;
             rclcpp::Serialization<sensor_msgs::msg::PointCloud2> pc2_serialization;
+            rclcpp::Serialization<tf2_msgs::msg::TFMessage> tf_serialization;
 
             while (reader.has_next())
             {
@@ -1110,7 +1117,7 @@ public:
                 if (serialized_msg->topic_name == imu_topic) {
                     auto msg = std::make_shared<sensor_msgs::msg::Imu>();
                     imu_serialization.deserialize_message(&extracted_serialized_msg, msg.get());
-                    all_messages.push_back({get_time_sec(msg->header.stamp), msg, nullptr, imu_topic});
+                    all_messages.push_back({get_time_sec(msg->header.stamp), msg, nullptr, nullptr, imu_topic});
                 }
                 else if (serialized_msg->topic_name == lid_topic) {
                     PointCloudXYZI::Ptr cloud(new PointCloudXYZI());
@@ -1126,7 +1133,15 @@ public:
                         header_stamp = get_time_sec(pc2_msg->header.stamp);
                         p_pre->process(std::move(pc2_msg), cloud);
                     }
-                    all_messages.push_back({header_stamp, nullptr, cloud, lid_topic});
+                    all_messages.push_back({header_stamp, nullptr, cloud, nullptr, lid_topic});
+                }
+                else if (serialized_msg->topic_name == tf_topic || serialized_msg->topic_name == tf_static_topic) {
+                    auto msg = std::make_shared<tf2_msgs::msg::TFMessage>();
+                    tf_serialization.deserialize_message(&extracted_serialized_msg, msg.get());
+                    // Use the timestamp from the first transform in the message
+                    if (!msg->transforms.empty()) {
+                         all_messages.push_back({get_time_sec(msg->transforms[0].header.stamp), nullptr, nullptr, msg, serialized_msg->topic_name});
+                    }
                 }
             }
         } catch (const std::exception& e) {
@@ -1153,6 +1168,10 @@ public:
                 lidar_buffer.push_back(msg.lidar_msg);
                 time_buffer.push_back(msg.timestamp);
                 last_timestamp_lidar = msg.timestamp;
+            } else if (msg.topic_name == tf_topic) {
+                tf_broadcaster_->sendTransform(msg.tf_msg->transforms);
+            } else if (msg.topic_name == tf_static_topic) {
+                static_tf_broadcaster_->sendTransform(msg.tf_msg->transforms);
             }
 
             if (sync_packages(Measures)) {
@@ -1269,6 +1288,7 @@ private:
 
     std::string bag_file_;
     rclcpp::Publisher<rosgraph_msgs::msg::Clock>::SharedPtr pubClock_;
+    std::unique_ptr<tf2_ros::StaticTransformBroadcaster> static_tf_broadcaster_;
 };
 
 int main(int argc, char** argv)

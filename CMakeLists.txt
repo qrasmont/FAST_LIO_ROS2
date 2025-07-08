@@ -63,6 +63,7 @@ find_package(livox_ros_driver2 REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(rosbag2_cpp REQUIRED)
 find_package(rosbag2_storage REQUIRED)
+find_package(tf2_msgs REQUIRED)
 
 set(dependencies
   rclcpp
@@ -78,6 +79,7 @@ set(dependencies
   livox_ros_driver2
   rosbag2_cpp
   rosbag2_storage
+  tf2_msgs
 )
 
 # Thirdparty libraries
