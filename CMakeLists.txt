@@ -61,6 +61,8 @@ find_package(pcl_ros REQUIRED)
 find_package(pcl_conversions REQUIRED)
 find_package(livox_ros_driver2 REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
+find_package(rosbag2_cpp REQUIRED)
+find_package(rosbag2_storage REQUIRED)
 
 set(dependencies
   rclcpp
@@ -74,6 +76,8 @@ set(dependencies
   pcl_ros
   pcl_conversions
   livox_ros_driver2
+  rosbag2_cpp
+  rosbag2_storage
 )
 
 # Thirdparty libraries
