@@ -73,6 +73,7 @@
 #define LASER_POINT_COV     (0.001)
 #define MAXN                (720000)
 #define PUBFRAME_PERIOD     (20)
+#define INIT_IMU_COUNT      (200)
 
 /*** Time Log Variables ***/
 double kdtree_incremental_time = 0.0, kdtree_search_time = 0.0, kdtree_delete_time = 0.0;
@@ -462,7 +463,7 @@ void publish_map(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub
 void save_to_pcd()
 {
     pcl::PCDWriter pcd_writer;
-    pcd_writer.writeBinary(map_file_path, *pcl_wait_pub);
+    pcd_writer.writeBinary(map_file_path, *pcl_wait_save);
 }
 
 template<typename T>
@@ -785,6 +786,7 @@ public:
             sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(imu_topic, 10, std::bind(&LaserMappingNode::imu_cbk, this, std::placeholders::_1));
             imu_topic = sub_imu_->get_topic_name();
 
+            init_thread_ = std::thread(&LaserMappingNode::initialization_thread_func, this);
             processing_thread_ = std::thread(&LaserMappingNode::processing_thread_func, this);
         }
 
@@ -808,8 +810,11 @@ public:
 
     ~LaserMappingNode()
     {
-        flg_exit = true;
+        flg_exit_ = true;
         sig_buffer_.notify_all();
+        if (init_thread_.joinable()) {
+            init_thread_.join();
+        }
         if (processing_thread_.joinable()) {
             processing_thread_.join();
         }
@@ -882,7 +887,22 @@ public:
         std::sort(all_messages.begin(), all_messages.end());
         RCLCPP_INFO(this->get_logger(), "Processing sorted messages...");
 
-        rclcpp::Rate rate(200.0); // Process at 200 Hz
+        // Perform initialization deterministically from the sorted bag data
+        deque<sensor_msgs::msg::Imu::ConstSharedPtr> init_imu_data;
+        for (const auto& msg : all_messages) {
+            if (msg.topic_name == imu_topic) {
+                init_imu_data.push_back(msg.imu_msg);
+                if (init_imu_data.size() >= INIT_IMU_COUNT) {
+                    break;
+                }
+            }
+        }
+        p_imu->IMU_init(init_imu_data, kf);
+        flg_is_system_initialized_ = true;
+        RCLCPP_INFO(this->get_logger(), "System initialized from bag file.");
+
+
+        rclcpp::Rate rate(200.0);
 
         for (const auto& msg : all_messages)
         {
@@ -933,6 +953,7 @@ public:
 
 private:
     // Member variables for buffers and synchronization
+    std::thread init_thread_;
     std::thread processing_thread_;
     std::mutex mtx_buffer_;
     std::condition_variable sig_buffer_;
@@ -941,6 +962,9 @@ private:
     deque<sensor_msgs::msg::Imu::ConstSharedPtr> imu_buffer_;
     bool timediff_set_flg = false;
     double timediff_lidar_wrt_imu = 0.0;
+    bool flg_is_system_initialized_ = false;
+    bool flg_exit_ = false;
+
 
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubLaserCloudFull_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubLaserCloudFull_body_;
@@ -1053,7 +1077,7 @@ private:
 
         if (timestamp < last_timestamp_imu)
         {
-            RCLCPP_WARN(this->get_logger(), "IMU loop back, clear IMU buffer.");
+            RCLCPP_WARN(this->get_logger(), "IMU loop back, clear all buffers.");
             lidar_buffer_.clear();
             imu_buffer_.clear();
             time_buffer_.clear();
@@ -1100,37 +1124,61 @@ private:
             imu_buffer_.pop_front();
         }
 
-	// Logging for verification
-	RCLCPP_INFO(rclcpp::get_logger("sync_packages"), "Scan #%d: LiDAR time [%.4f, %.4f], IMU samples: %zu",
-			scan_count, meas.lidar_beg_time - first_lidar_time, meas.lidar_end_time - first_lidar_time, meas.imu.size());
-	scan_count++;
-
-
         lidar_buffer_.pop_front();
         time_buffer_.pop_front();
 
         return true;
     }
 
+    void initialization_thread_func()
+    {
+        RCLCPP_INFO(this->get_logger(), "Initialization thread started.");
+
+        std::unique_lock<std::mutex> lock(mtx_buffer_);
+        sig_buffer_.wait(lock, [&] {
+            return flg_exit_ || imu_buffer_.size() >= INIT_IMU_COUNT;
+        });
+
+        if (flg_exit_) return;
+
+        p_imu->IMU_init(imu_buffer_, kf);
+        flg_is_system_initialized_ = true;
+        RCLCPP_INFO(this->get_logger(), "System initialized.");
+
+        // Notify the main processing thread to start
+        sig_buffer_.notify_all();
+    }
+
     void processing_thread_func()
     {
-        RCLCPP_INFO(this->get_logger(), "Processing thread started.");
-        while(rclcpp::ok() && !flg_exit)
+        RCLCPP_INFO(this->get_logger(), "Processing thread started, waiting for initialization...");
+
+        // Wait until initialization is complete
+        std::unique_lock<std::mutex> lock(mtx_buffer_);
+        sig_buffer_.wait(lock, [&] { return flg_exit_ || flg_is_system_initialized_; });
+        lock.unlock();
+
+        if (flg_exit_) return;
+
+        RCLCPP_INFO(this->get_logger(), "Initialization complete, starting main processing loop.");
+
+        while(rclcpp::ok() && !flg_exit_)
         {
-            std::unique_lock<std::mutex> lock(mtx_buffer_);
+            lock.lock();
             sig_buffer_.wait(lock, [&] {
-                    if (flg_exit) return true;
-                    if (lidar_buffer_.size() < 2) return false;
+                if (flg_exit_) return true;
+                if (lidar_buffer_.size() < 2 || imu_buffer_.empty()) return false;
 
-                    // The definitive condition: check if the IMU buffer has "caught up" to the end of the first scan interval
-                    return !imu_buffer_.empty() && get_time_sec(imu_buffer_.back()->header.stamp) >= time_buffer_.at(1);
-                    });
+                return get_time_sec(imu_buffer_.back()->header.stamp) >= time_buffer_.at(1);
+            });
 
-            if (flg_exit) break;
+            if (flg_exit_) break;
 
             if (sync_packages(Measures)) {
-                lock.unlock(); // Unlock before processing
+                lock.unlock();
                 process_frame(Measures);
+            } else {
+                lock.unlock();
             }
         }
         RCLCPP_INFO(this->get_logger(), "Processing thread stopped.");
