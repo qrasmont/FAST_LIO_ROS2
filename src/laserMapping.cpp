@@ -561,6 +561,16 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
         {
             /** Find the closest surfaces in the map **/
             ikdtree.Nearest_Search(point_world, NUM_MATCH_POINTS, points_near, pointSearchSqDis);
+
+            // Sort the nearest neighbors to ensure deterministic plane fitting
+            if (points_near.size() >= NUM_MATCH_POINTS) {
+                std::sort(points_near.begin(), points_near.end(), [](const PointType& a, const PointType& b) {
+                    if (a.x != b.x) return a.x < b.x;
+                    if (a.y != b.y) return a.y < b.y;
+                    return a.z < b.z;
+                });
+            }
+
             point_selected_surf[i] = points_near.size() < NUM_MATCH_POINTS ? false : pointSearchSqDis[NUM_MATCH_POINTS - 1] > 5 ? false : true;
         }
 
