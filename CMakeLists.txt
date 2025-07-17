@@ -5,18 +5,10 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
-ADD_COMPILE_OPTIONS(-std=c++17)
-ADD_COMPILE_OPTIONS(-std=c++17)
-set(CMAKE_CXX_FLAGS "-std=c++17 -O3")
+ADD_COMPILE_OPTIONS(-std=c++17 -O3 -pthread -fexceptions)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 add_definitions(-DROOT_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/\")
-
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fexceptions")
-set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -pthread -std=c++0x -std=c++14 -fexceptions")
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 message("Current CPU archtecture: ${CMAKE_SYSTEM_PROCESSOR}")
 
@@ -98,37 +90,80 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 )
 ament_export_dependencies(rosidl_default_runtime)
 
-add_executable(fastlio_mapping src/laserMapping.cpp include/ikd-Tree/ikd_Tree.cpp src/preprocess.cpp)
-target_include_directories(fastlio_mapping PUBLIC
+# Define the core logic as a shared library
+add_library(fast_lio_core SHARED
+  src/laserMapping.cpp
+  src/preprocess.cpp
+  include/ikd-Tree/ikd_Tree.cpp
+)
+
+# Link headers for core
+target_include_directories(fast_lio_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/ikd-Tree> 
   ${PCL_INCLUDE_DIRS}
+  ${PYTHON_INCLUDE_DIRS}
 )
-target_link_libraries(fastlio_mapping ${PCL_LIBRARIES} ${PYTHON_LIBRARIES} Eigen3::Eigen)
-target_include_directories(fastlio_mapping PRIVATE ${PYTHON_INCLUDE_DIRS})
 
+# Link dependencies for core
+target_link_libraries(fast_lio_core
+  ${PCL_LIBRARIES}
+  ${PYTHON_LIBRARIES}
+  Eigen3::Eigen
+)
+
+# Link ROS dependencies for core
+ament_target_dependencies(fast_lio_core ${dependencies})
+
+# Link custom message typesupport
 list(APPEND EOL_LIST "foxy" "galactic" "eloquent" "dashing" "crystal")
-
 if($ENV{ROS_DISTRO} IN_LIST EOL_LIST)
-  # Custommsg to support foxy & galactic
-  rosidl_target_interfaces(fastlio_mapping
+  rosidl_target_interfaces(fast_lio_core
     ${PROJECT_NAME} "rosidl_typesupport_cpp")
 else()
   rosidl_get_typesupport_target(cpp_typesupport_target
     ${PROJECT_NAME} "rosidl_typesupport_cpp")
-  target_link_libraries(fastlio_mapping ${cpp_typesupport_target})
+  target_link_libraries(fast_lio_core ${cpp_typesupport_target})
 endif()
 
-ament_target_dependencies(fastlio_mapping ${dependencies})
+
+# Define the fastlio_mapping ROS node executable
+add_executable(fastlio_mapping src/main.cpp)
+target_link_libraries(fastlio_mapping fast_lio_core)
+
 
 # ---------------- Install --------------- #
+# Install the standalone node
 install(TARGETS fastlio_mapping
   DESTINATION lib/${PROJECT_NAME}
+)
+
+set(export_targets_name "${PROJECT_NAME}_targets")
+
+# Install the core library for use with other packages
+install(TARGETS fast_lio_core
+  EXPORT ${export_targets_name}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+install(
+  DIRECTORY include/
+  DESTINATION include
 )
 
 install(
   DIRECTORY config launch rviz
   DESTINATION share/${PROJECT_NAME}
 )
+
+# Export the library and include directories
+ament_export_targets(${export_targets_name}
+  HAS_LIBRARY_TARGET
+)
+
+ament_export_include_directories(include)
+ament_export_dependencies(rosidl_default_runtime)
 
 ament_package()
