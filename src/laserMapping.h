@@ -38,6 +38,18 @@
 #include <rosbag2_cpp/readers/sequential_reader.hpp>
 #include <rosbag2_storage/storage_options.hpp>
 
+struct StampedMessage {
+    double timestamp;
+    sensor_msgs::msg::Imu::ConstSharedPtr imu_msg;
+    PointCloudXYZI::Ptr lidar_msg;
+    tf2_msgs::msg::TFMessage::ConstSharedPtr tf_msg;
+    string topic_name; // To distinguish message types
+
+    bool operator<(const StampedMessage& other) const {
+        return timestamp < other.timestamp;
+    }
+};
+
 struct FrameResult {
     Eigen::Matrix4d pose = Eigen::Matrix4d::Identity();
     pcl::PointCloud<pcl::PointXYZI> cloud;
@@ -100,4 +112,8 @@ private:
     std::string bag_file_;
     rclcpp::Publisher<rosgraph_msgs::msg::Clock>::SharedPtr pubClock_;
     std::unique_ptr<tf2_ros::StaticTransformBroadcaster> static_tf_broadcaster_;
+
+    std::deque<StampedMessage> message_buffer_;
+    double bag_buffer_time_sec_ = 2.0;
+    bool offline_buffer_enabled = true;
 };
