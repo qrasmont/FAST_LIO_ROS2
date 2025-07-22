@@ -8,6 +8,8 @@
 #include <fast_lio/msg/pose6_d.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <nav_msgs/msg/odometry.hpp>
+#include <deque>
+#include <rclcpp/rclcpp.hpp>
 
 using namespace std;
 using namespace Eigen;
@@ -45,10 +47,15 @@ typedef Matrix3f M3F;
 #define MF(a,b)  Matrix<float, (a), (b)>
 #define VF(a)    Matrix<float, (a), 1>
 
-M3D Eye3d(M3D::Identity());
-M3F Eye3f(M3F::Identity());
-V3D Zero3d(0, 0, 0);
-V3F Zero3f(0, 0, 0);
+inline M3D Eye3d(M3D::Identity());
+inline M3F Eye3f(M3F::Identity());
+inline V3D Zero3d(0, 0, 0);
+inline V3F Zero3f(0, 0, 0);
+
+struct FrameResult {
+    Eigen::Matrix4d pose = Eigen::Matrix4d::Identity();
+    pcl::PointCloud<pcl::PointXYZI> cloud;
+};
 
 struct MeasureGroup     // Lidar data and imu dates for the curent process
 {
@@ -152,19 +159,19 @@ struct StatesGroup
 };
 
 template<typename T>
-T rad2deg(T radians)
+inline T rad2deg(T radians)
 {
   return radians * 180.0 / PI_M;
 }
 
 template<typename T>
-T deg2rad(T degrees)
+inline T deg2rad(T degrees)
 {
   return degrees * PI_M / 180.0;
 }
 
 template<typename T>
-auto set_pose6d(const double t, const Matrix<T, 3, 1> &a, const Matrix<T, 3, 1> &g, \
+inline auto set_pose6d(const double t, const Matrix<T, 3, 1> &a, const Matrix<T, 3, 1> &g, \
                 const Matrix<T, 3, 1> &v, const Matrix<T, 3, 1> &p, const Matrix<T, 3, 3> &R)
 {
     Pose6D rot_kp;
@@ -188,7 +195,7 @@ where A0_i = [x_i, y_i, z_i], x0 = [A/D, B/D, C/D]^T, b0 = [-1, ..., -1]^T
 normvec:  normalized x0
 */
 template<typename T>
-bool esti_normvector(Matrix<T, 3, 1> &normvec, const PointVector &point, const T &threshold, const int &point_num)
+inline bool esti_normvector(Matrix<T, 3, 1> &normvec, const PointVector &point, const T &threshold, const int &point_num)
 {
     MatrixXf A(point_num, 3);
     MatrixXf b(point_num, 1);
@@ -215,13 +222,13 @@ bool esti_normvector(Matrix<T, 3, 1> &normvec, const PointVector &point, const T
     return true;
 }
 
-float calc_dist(PointType p1, PointType p2){
+inline float calc_dist(PointType p1, PointType p2){
     float d = (p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y) + (p1.z - p2.z) * (p1.z - p2.z);
     return d;
 }
 
 template<typename T>
-bool esti_plane(Matrix<T, 4, 1> &pca_result, const PointVector &point, const T &threshold)
+inline bool esti_plane(Matrix<T, 4, 1> &pca_result, const PointVector &point, const T &threshold)
 {
     Matrix<T, NUM_MATCH_POINTS, 3> A;
     Matrix<T, NUM_MATCH_POINTS, 1> b;
@@ -254,12 +261,12 @@ bool esti_plane(Matrix<T, 4, 1> &pca_result, const PointVector &point, const T &
     return true;
 }
 
-double get_time_sec(const builtin_interfaces::msg::Time &time)
+inline double get_time_sec(const builtin_interfaces::msg::Time &time)
 {
     return rclcpp::Time(time).seconds();
 }
 
-rclcpp::Time get_ros_time(double timestamp)
+inline rclcpp::Time get_ros_time(double timestamp)
 {
     int32_t sec = std::floor(timestamp);
     auto nanosec_d = (timestamp - std::floor(timestamp)) * 1e9;

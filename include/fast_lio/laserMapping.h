@@ -30,7 +30,7 @@
 #include <geometry_msgs/msg/vector3.hpp>
 #include <livox_ros_driver2/msg/custom_msg.hpp>
 #include "preprocess.h"
-#include <ikd_Tree.h>
+#include "ikd-Tree/ikd_Tree.h"
 #include <rosgraph_msgs/msg/clock.hpp>
 #include <tf2_msgs/msg/tf_message.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -50,11 +50,6 @@ struct StampedMessage {
     }
 };
 
-struct FrameResult {
-    Eigen::Matrix4d pose = Eigen::Matrix4d::Identity();
-    pcl::PointCloud<pcl::PointXYZI> cloud;
-};
-
 class LaserMappingNode : public rclcpp::Node
 {
 public:
@@ -63,13 +58,13 @@ public:
 
     void process_bag_file(const std::string& bag_path);
     FrameResult process_frame(const MeasureGroup& meas);
+    bool sync_packages(MeasureGroup &meas);
 
 private:
 
     void standard_pcl_cbk(const sensor_msgs::msg::PointCloud2::UniquePtr msg);
     void livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::UniquePtr msg);
     void imu_cbk(const sensor_msgs::msg::Imu::UniquePtr msg_in);
-    bool sync_packages(MeasureGroup &meas);
     void initialization_thread_func();
     void processing_thread_func();
     void accumulate_map_points();
