@@ -92,8 +92,9 @@ ament_export_dependencies(rosidl_default_runtime)
 
 # Define the core logic as a shared library
 add_library(fast_lio_core SHARED
-  src/laserMapping.cpp
+  src/FastLioCore.cpp
   src/preprocess.cpp
+  src/IMU_Processing.cpp
   include/ikd-Tree/ikd_Tree.cpp
 )
 
@@ -129,7 +130,7 @@ endif()
 
 
 # Define the fastlio_mapping ROS node executable
-add_executable(fastlio_mapping src/main.cpp)
+add_executable(fastlio_mapping src/laserMapping.cpp src/main.cpp)
 target_link_libraries(fastlio_mapping fast_lio_core)
 
 

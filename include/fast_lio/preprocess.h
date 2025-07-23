@@ -3,12 +3,12 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <livox_ros_driver2/msg/custom_msg.hpp>
+#include "fast_lio/common_lib.h"
 
 using namespace std;
 
 #define IS_VALID(a) ((abs(a) > 1e8) ? true : false)
 
-typedef pcl::PointXYZINormal PointType;
 typedef pcl::PointCloud<PointType> PointCloudXYZI;
 
 enum LID_TYPE
