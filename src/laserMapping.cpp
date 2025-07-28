@@ -244,6 +244,8 @@ void LaserMappingNode::processing_thread_func()
         // Process package
         fast_lio_core_->process();
 
+        fast_lio_core_->accumulate_map_points();
+
         // Publish odom & clouds
         nav_msgs::msg::Odometry odom;
         geometry_msgs::msg::Quaternion quat;
