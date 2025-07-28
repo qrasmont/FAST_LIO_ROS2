@@ -8,6 +8,7 @@
         cube_side_length: 1000.0
         runtime_pos_log_enable: false
         map_file_path: "./test.pcd"
+        qos_profile: "sensor_data"
 
         common:
             lid_topic:  "/livox/points"

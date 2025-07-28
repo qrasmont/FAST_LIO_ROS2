@@ -85,6 +85,7 @@ LaserMappingNode::LaserMappingNode(const rclcpp::NodeOptions& options) : Node("l
     this->declare_parameter<std::string>("bag_file", "");
     this->declare_parameter<bool>("offline_buffer_enabled", true);
     this->declare_parameter<double>("bag_buffer_time_sec", 2.0);
+    this->declare_parameter<std::string>("qos_profile", "default");
 
 
     this->get_parameter("publish.path_en", path_en_);
@@ -125,18 +126,29 @@ LaserMappingNode::LaserMappingNode(const rclcpp::NodeOptions& options) : Node("l
     this->get_parameter("offline_buffer_enabled", offline_buffer_enabled_);
     config.dense_publish_en = this->get_parameter("publish.dense_publish_en").as_bool();
     config.map_pub_en = this->get_parameter("publish.map_en").as_bool();
+    this->get_parameter("qos_profile", qos_profile_);
 
     fast_lio_core_ = std::make_unique<FastLioCore>(config);
 
+    rclcpp::QoS qos(20);
+
+    if (qos_profile_ == "sensor_data") {
+        RCLCPP_INFO(this->get_logger(), "Using 'sensor_data' QoS profile for subscribers.");
+        qos = rclcpp::SensorDataQoS();
+    } else {
+        RCLCPP_INFO(this->get_logger(), "Using 'default' (Reliable, depth 20) QoS profile for subscribers.");
+        qos = rclcpp::QoS(20);
+    }
+
     if (config.lidar_type == 1) // AVIA
     {
-        sub_pcl_livox_ = this->create_subscription<livox_ros_driver2::msg::CustomMsg>(lid_topic_, 20, std::bind(&LaserMappingNode::livox_pcl_cbk, this, std::placeholders::_1));
+        sub_pcl_livox_ = this->create_subscription<livox_ros_driver2::msg::CustomMsg>(lid_topic_, qos, std::bind(&LaserMappingNode::livox_pcl_cbk, this, std::placeholders::_1));
     }
     else
     {
-        sub_pcl_pc_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(lid_topic_, rclcpp::SensorDataQoS(), std::bind(&LaserMappingNode::standard_pcl_cbk, this, std::placeholders::_1));
+        sub_pcl_pc_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(lid_topic_, qos, std::bind(&LaserMappingNode::standard_pcl_cbk, this, std::placeholders::_1));
     }
-    sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(imu_topic_, 10, std::bind(&LaserMappingNode::imu_cbk, this, std::placeholders::_1));
+    sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(imu_topic_, qos, std::bind(&LaserMappingNode::imu_cbk, this, std::placeholders::_1));
 
     pubLaserCloudFull_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered", 20);
     pubLaserCloudFull_body_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered_body", 20);

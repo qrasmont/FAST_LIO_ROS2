@@ -61,6 +61,7 @@ private:
     bool effect_pub_en_ = false;
     bool map_pub_en_ = false;
     bool offline_buffer_enabled_ = true;
+    std::string qos_profile_ = "default";
 
     nav_msgs::msg::Path path_;
 
