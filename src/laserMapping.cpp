@@ -318,24 +318,8 @@ void LaserMappingNode::processing_thread_func()
 
 void LaserMappingNode::process_bag_file(const std::string& bag_path)
 {
-    std::string storage_id;
+    std::string storage_id = "";
     double bag_buffer_time_sec = this->get_parameter("bag_buffer_time_sec").as_double();
-
-    try {
-        rcpputils::fs::path p(bag_path);
-        if (rcpputils::fs::is_directory(p)) {
-            storage_id = "sqlite3";
-        } else if (p.extension().string() == ".mcap") {
-            storage_id = "mcap";
-        } else {
-            RCLCPP_WARN(this->get_logger(), "Cannot determine bag format from path: %s. Defaulting to 'sqlite3'.", bag_path.c_str());
-            storage_id = "sqlite3";
-        }
-    } catch (const std::exception& e) {
-        RCLCPP_ERROR(this->get_logger(), "Filesystem error: %s. Defaulting to 'sqlite3'.", e.what());
-        storage_id = "sqlite3";
-    }
-    RCLCPP_INFO(this->get_logger(), "Using storage format: '%s'", storage_id.c_str());
 
     rclcpp::Rate rate(200.0);
 
