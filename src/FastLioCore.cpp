@@ -6,7 +6,7 @@ BoxPointType LocalMap_Points;
 bool Localmap_Initialized = false;
 
 // Helper function to convert point from body to world frame
-void pointBodyToWorld(PointType const * const pi, PointType * const po, const state_ikfom& s)
+void pointBodyToWorld(PointTypeNorm const * const pi, PointTypeNorm * const po, const state_ikfom& s)
 {
     V3D p_body(pi->x, pi->y, pi->z);
     V3D p_global(s.rot * (s.offset_R_L_I*p_body + s.offset_T_L_I) + s.pos);
@@ -18,7 +18,7 @@ void pointBodyToWorld(PointType const * const pi, PointType * const po, const st
 }
 
 // Helper function to convert point from Lidar body to IMU body frame
-void RGBpointBodyLidarToIMU(PointType const * const pi, PointType * const po, const state_ikfom& s)
+void RGBpointBodyLidarToIMU(PointTypeNorm const * const pi, PointTypeNorm * const po, const state_ikfom& s)
 {
     V3D p_body_lidar(pi->x, pi->y, pi->z);
     V3D p_body_imu(s.offset_R_L_I*p_body_lidar + s.offset_T_L_I);
@@ -261,9 +261,9 @@ void FastLioCore::lasermap_fov_segment()
     kdtree_delete_counter_ = 0;
     kdtree_delete_time_ = 0.0;
 
-    PointType p_body;
+    PointTypeNorm p_body;
     p_body.x = LIDAR_SP_LEN; p_body.y = 0.0; p_body.z = 0.0;
-    PointType p_world;
+    PointTypeNorm p_world;
     pointBodyToWorld(&p_body, &p_world, state_point_);
 
     V3D pos_LiD = pos_lid_;
@@ -323,7 +323,7 @@ void FastLioCore::map_incremental()
         {
             const PointVector &points_near = Nearest_Points_[i];
             bool need_add = true;
-            PointType mid_point; 
+            PointTypeNorm mid_point; 
             mid_point.x = floor(feats_down_world_->points[i].x/config_.filter_size_map)*config_.filter_size_map + 0.5 * config_.filter_size_map;
             mid_point.y = floor(feats_down_world_->points[i].y/config_.filter_size_map)*config_.filter_size_map + 0.5 * config_.filter_size_map;
             mid_point.z = floor(feats_down_world_->points[i].z/config_.filter_size_map)*config_.filter_size_map + 0.5 * config_.filter_size_map;
@@ -489,8 +489,8 @@ void FastLioCore::h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<do
     #endif
     for (int i = 0; i < feats_down_size_; i++)
     {
-        PointType &point_body  = feats_down_body_->points[i]; 
-        PointType &point_world = feats_down_world_->points[i]; 
+        PointTypeNorm &point_body  = feats_down_body_->points[i]; 
+        PointTypeNorm &point_world = feats_down_world_->points[i]; 
 
         V3D p_body(point_body.x, point_body.y, point_body.z);
         V3D p_global(s.rot * (s.offset_R_L_I*p_body + s.offset_T_L_I) + s.pos);
@@ -554,7 +554,7 @@ void FastLioCore::h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<do
 
     for (int i = 0; i < effct_feat_num_; i++)
     {
-        const PointType &laser_p  = laserCloudOri_->points[i];
+        const PointTypeNorm &laser_p  = laserCloudOri_->points[i];
         V3D point_this_be(laser_p.x, laser_p.y, laser_p.z);
         M3D point_be_crossmat;
         point_be_crossmat << SKEW_SYM_MATRX(point_this_be);
@@ -562,7 +562,7 @@ void FastLioCore::h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<do
         M3D point_crossmat;
         point_crossmat<<SKEW_SYM_MATRX(point_this);
 
-        const PointType &norm_p = corr_normvect_->points[i];
+        const PointTypeNorm &norm_p = corr_normvect_->points[i];
         V3D norm_vec(norm_p.x, norm_p.y, norm_p.z);
 
         V3D C(s.rot.conjugate() *norm_vec);

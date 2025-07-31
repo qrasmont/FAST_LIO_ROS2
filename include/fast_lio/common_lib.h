@@ -34,9 +34,9 @@ using namespace Eigen;
 #define DEBUG_FILE_DIR(base_dir, name)     (string(base_dir + name))
 
 typedef fast_lio::msg::Pose6D Pose6D;
-typedef pcl::PointXYZINormal PointType;
-typedef pcl::PointCloud<PointType> PointCloudXYZI;
-typedef vector<PointType, Eigen::aligned_allocator<PointType>>  PointVector;
+typedef pcl::PointXYZINormal PointTypeNorm;
+typedef pcl::PointCloud<PointTypeNorm> PointCloudXYZI;
+typedef vector<PointTypeNorm, Eigen::aligned_allocator<PointTypeNorm>>  PointVector;
 typedef Vector3d V3D;
 typedef Matrix3d M3D;
 typedef Vector3f V3F;
@@ -222,7 +222,7 @@ inline bool esti_normvector(Matrix<T, 3, 1> &normvec, const PointVector &point, 
     return true;
 }
 
-inline float calc_dist(PointType p1, PointType p2){
+inline float calc_dist(PointTypeNorm p1, PointTypeNorm p2){
     float d = (p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y) + (p1.z - p2.z) * (p1.z - p2.z);
     return d;
 }

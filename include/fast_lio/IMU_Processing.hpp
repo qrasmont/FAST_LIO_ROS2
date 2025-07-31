@@ -27,7 +27,7 @@
 
 #define MAX_INI_COUNT (10)
 
-inline const bool time_list(PointType &x, PointType &y) {return (x.curvature < y.curvature);};
+inline const bool time_list(PointTypeNorm &x, PointTypeNorm &y) {return (x.curvature < y.curvature);};
 
 /// *************IMU Process and undistortion
 class ImuProcess

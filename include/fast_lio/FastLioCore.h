@@ -119,7 +119,7 @@ public:
     PointCloudXYZI::Ptr feats_down_body_;
     PointCloudXYZI::Ptr feats_down_world_;
     std::vector<PointVector> Nearest_Points_;
-    KD_TREE<PointType> ikdtree_;
+    KD_TREE<PointTypeNorm> ikdtree_;
     std::vector<bool> point_selected_surf_;
     PointCloudXYZI::Ptr normvec_;
     std::vector<float> res_last_;
@@ -150,8 +150,8 @@ private:
     PointCloudXYZI::Ptr feats_undistort_;
     PointCloudXYZI::Ptr pcl_wait_save_;
 
-    pcl::VoxelGrid<PointType> downSizeFilterSurf_;
-    pcl::VoxelGrid<PointType> downSizeFilterMap_;
+    pcl::VoxelGrid<PointTypeNorm> downSizeFilterSurf_;
+    pcl::VoxelGrid<PointTypeNorm> downSizeFilterMap_;
 
     std::vector<std::vector<int>> pointSearchInd_surf_;
     std::vector<BoxPointType> cub_needrm;

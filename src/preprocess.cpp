@@ -142,7 +142,7 @@ void Preprocess::avia_handler(const livox_ros_driver2::msg::CustomMsg::UniquePtr
     {
       if (pl_buff[j].size() <= 5)
         continue;
-      pcl::PointCloud<PointType>& pl = pl_buff[j];
+      pcl::PointCloud<PointTypeNorm>& pl = pl_buff[j];
       plsize = pl.size();
       vector<orgtype>& types = typess[j];
       types.clear();
@@ -218,7 +218,7 @@ void Preprocess::oust64_handler(const sensor_msgs::msg::PointCloud2::UniquePtr &
       if (range < (blind * blind))
         continue;
       Eigen::Vector3d pt_vec;
-      PointType added_pt;
+      PointTypeNorm added_pt;
       added_pt.x = pl_orig.points[i].x;
       added_pt.y = pl_orig.points[i].y;
       added_pt.z = pl_orig.points[i].z;
@@ -276,7 +276,7 @@ void Preprocess::oust64_handler(const sensor_msgs::msg::PointCloud2::UniquePtr &
         continue;
 
       Eigen::Vector3d pt_vec;
-      PointType added_pt;
+      PointTypeNorm added_pt;
       added_pt.x = pl_orig.points[i].x;
       added_pt.y = pl_orig.points[i].y;
       added_pt.z = pl_orig.points[i].z;
@@ -344,7 +344,7 @@ void Preprocess::velodyne_handler(const sensor_msgs::msg::PointCloud2::UniquePtr
 
     for (int i = 0; i < plsize; i++)
     {
-      PointType added_pt;
+      PointTypeNorm added_pt;
       added_pt.normal_x = 0;
       added_pt.normal_y = 0;
       added_pt.normal_z = 0;
@@ -416,7 +416,7 @@ void Preprocess::velodyne_handler(const sensor_msgs::msg::PointCloud2::UniquePtr
   {
     for (int i = 0; i < plsize; i++)
     {
-      PointType added_pt;
+      PointTypeNorm added_pt;
       // cout<<"!!!!!!"<<i<<" "<<plsize<<endl;
 
       added_pt.normal_x = 0;
@@ -509,7 +509,7 @@ void Preprocess::mid360_handler(const sensor_msgs::msg::PointCloud2::UniquePtr &
 
   for (uint i = 0; i < plsize; ++i)
   {
-    PointType added_pt;
+    PointTypeNorm added_pt;
     added_pt.normal_x = 0;
     added_pt.normal_y = 0;
     added_pt.normal_z = 0;
@@ -571,7 +571,7 @@ void Preprocess::default_handler(const sensor_msgs::msg::PointCloud2::UniquePtr 
 
   for(uint i = 0; i < plsize; ++i)
   {
-    PointType added_pt;
+    PointTypeNorm added_pt;
     added_pt.normal_x = 0;
     added_pt.normal_y = 0;
     added_pt.normal_z = 0;
@@ -588,7 +588,7 @@ void Preprocess::default_handler(const sensor_msgs::msg::PointCloud2::UniquePtr 
   }
 }
 
-void Preprocess::give_feature(pcl::PointCloud<PointType>& pl, vector<orgtype>& types)
+void Preprocess::give_feature(pcl::PointCloud<PointTypeNorm>& pl, vector<orgtype>& types)
 {
   int plsize = pl.size();
   int plsize2;
@@ -864,7 +864,7 @@ void Preprocess::give_feature(pcl::PointCloud<PointType>& pl, vector<orgtype>& t
 
       if (j == uint(last_surface + point_filter_num - 1))
       {
-        PointType ap;
+        PointTypeNorm ap;
         ap.x = pl[j].x;
         ap.y = pl[j].y;
         ap.z = pl[j].z;
@@ -883,7 +883,7 @@ void Preprocess::give_feature(pcl::PointCloud<PointType>& pl, vector<orgtype>& t
       }
       if (last_surface != -1)
       {
-        PointType ap;
+        PointTypeNorm ap;
         for (uint k = last_surface; k < j; k++)
         {
           ap.x += pl[k].x;
