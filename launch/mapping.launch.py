@@ -22,6 +22,7 @@ def generate_launch_description():
     rviz_use = LaunchConfiguration('rviz')
     rviz_cfg = LaunchConfiguration('rviz_cfg')
     bag_file = LaunchConfiguration('bag_file')
+    qos = LaunchConfiguration('qos')
 
     declare_use_sim_time_cmd = DeclareLaunchArgument(
         'use_sim_time', default_value='false',
@@ -47,6 +48,10 @@ def generate_launch_description():
         'bag_file', default_value='',
         description='Bag file for offline mode'
     )
+    declare_qos_cmd = DeclareLaunchArgument(
+        'qos', default_value='sensor_data',
+        description='QoS profile (sensor_data or default)'
+    )
 
     fast_lio_node = Node(
         package='fast_lio',
@@ -54,6 +59,7 @@ def generate_launch_description():
         parameters=[PathJoinSubstitution([config_path, config_file]),
                     {'use_sim_time': use_sim_time},
                     {'bag_file': bag_file},
+                    {'qos_profile': qos},
                     {'common': {'lid_topic': '/livox/points', 'imu_topic':'/livox/imu'}}],
         output='screen'
     )
@@ -71,6 +77,7 @@ def generate_launch_description():
     ld.add_action(declare_rviz_cmd)
     ld.add_action(declare_rviz_config_path_cmd)
     ld.add_action(declare_bag_file_cmd)
+    ld.add_action(declare_qos_cmd)
 
     ld.add_action(fast_lio_node)
     ld.add_action(rviz_node)
