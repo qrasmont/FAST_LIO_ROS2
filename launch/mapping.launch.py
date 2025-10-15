@@ -23,6 +23,8 @@ def generate_launch_description():
     rviz_cfg = LaunchConfiguration('rviz_cfg')
     bag_file = LaunchConfiguration('bag_file')
     qos = LaunchConfiguration('qos')
+    map_frame = LaunchConfiguration('map_frame')
+    robot_frame = LaunchConfiguration('robot_frame')
 
     declare_use_sim_time_cmd = DeclareLaunchArgument(
         'use_sim_time', default_value='false',
@@ -52,6 +54,14 @@ def generate_launch_description():
         'qos', default_value='sensor_data',
         description='QoS profile (sensor_data or default)'
     )
+    declare_map_frame_cmd = DeclareLaunchArgument(
+        'map_frame', default_value='camera_init',
+        description='Name of the map frame'
+    )
+    declare_robot_frame_cmd = DeclareLaunchArgument(
+        'robot_frame', default_value='body',
+        description='Name of the robot frame'
+    )
 
     fast_lio_node = Node(
         package='fast_lio',
@@ -60,6 +70,7 @@ def generate_launch_description():
                     {'use_sim_time': use_sim_time},
                     {'bag_file': bag_file},
                     {'qos_profile': qos},
+                    {'frames': {'world': map_frame, 'body':robot_frame}},
                     {'common': {'lid_topic': '/livox/points', 'imu_topic':'/livox/imu'}}],
         output='screen'
     )
@@ -78,6 +89,8 @@ def generate_launch_description():
     ld.add_action(declare_rviz_config_path_cmd)
     ld.add_action(declare_bag_file_cmd)
     ld.add_action(declare_qos_cmd)
+    ld.add_action(declare_map_frame_cmd)
+    ld.add_action(declare_robot_frame_cmd)
 
     ld.add_action(fast_lio_node)
     ld.add_action(rviz_node)

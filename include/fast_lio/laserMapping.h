@@ -63,6 +63,9 @@ private:
     bool offline_buffer_enabled_ = true;
     std::string qos_profile_ = "default";
 
+    std::string frame_id_world_;
+    std::string frame_id_body_;
+
     nav_msgs::msg::Path path_;
 
     std::string lid_topic_, imu_topic_;

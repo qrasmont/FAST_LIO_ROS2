@@ -86,6 +86,8 @@ LaserMappingNode::LaserMappingNode(const rclcpp::NodeOptions& options) : Node("l
     this->declare_parameter<bool>("offline_buffer_enabled", true);
     this->declare_parameter<double>("bag_buffer_time_sec", 2.0);
     this->declare_parameter<std::string>("qos_profile", "default");
+    this->declare_parameter<std::string>("frames.world", "camera_init");
+    this->declare_parameter<std::string>("frames.body", "body");
 
 
     this->get_parameter("publish.path_en", path_en_);
@@ -127,6 +129,8 @@ LaserMappingNode::LaserMappingNode(const rclcpp::NodeOptions& options) : Node("l
     config.dense_publish_en = this->get_parameter("publish.dense_publish_en").as_bool();
     config.map_pub_en = this->get_parameter("publish.map_en").as_bool();
     this->get_parameter("qos_profile", qos_profile_);
+    this->get_parameter("frames.world", frame_id_world_);
+    this->get_parameter("frames.body", frame_id_body_);
 
     fast_lio_core_ = std::make_unique<FastLioCore>(config);
 
@@ -168,7 +172,7 @@ LaserMappingNode::LaserMappingNode(const rclcpp::NodeOptions& options) : Node("l
     map_save_srv_ = this->create_service<std_srvs::srv::Trigger>("map_save", std::bind(&LaserMappingNode::map_save_callback, this, std::placeholders::_1, std::placeholders::_2));
 
     path_.header.stamp = this->get_clock()->now();
-    path_.header.frame_id ="camera_init";
+    path_.header.frame_id = frame_id_world_;
 
     processing_thread_ = std::thread(&LaserMappingNode::processing_thread_func, this);
 
@@ -267,9 +271,9 @@ void LaserMappingNode::processing_thread_func()
             pubOdomAftMapped_->publish(odom);
 
             geometry_msgs::msg::TransformStamped trans;
-            trans.header.frame_id = "camera_init";
+            trans.header.frame_id = frame_id_world_;
             trans.header.stamp = odom.header.stamp;
-            trans.child_frame_id = "body";
+            trans.child_frame_id = frame_id_body_;
             trans.transform.translation.x = odom.pose.pose.position.x;
             trans.transform.translation.y = odom.pose.pose.position.y;
             trans.transform.translation.z = odom.pose.pose.position.z;
@@ -288,7 +292,7 @@ void LaserMappingNode::processing_thread_func()
             sensor_msgs::msg::PointCloud2 msg;
             pcl::toROSMsg(*cloud_world, msg);
             msg.header.stamp = get_ros_time(fast_lio_core_->get_lidar_end_time());
-            msg.header.frame_id = "camera_init";
+            msg.header.frame_id = frame_id_world_;
             pubLaserCloudFull_->publish(msg);
         }
 
@@ -298,7 +302,7 @@ void LaserMappingNode::processing_thread_func()
             sensor_msgs::msg::PointCloud2 msg;
             pcl::toROSMsg(*cloud_body, msg);
             msg.header.stamp = get_ros_time(fast_lio_core_->get_lidar_end_time());
-            msg.header.frame_id = "body";
+            msg.header.frame_id = frame_id_body_;
             pubLaserCloudFull_body_->publish(msg);
         }
 
@@ -308,7 +312,7 @@ void LaserMappingNode::processing_thread_func()
             sensor_msgs::msg::PointCloud2 msg;
             pcl::toROSMsg(*cloud_effect, msg);
             msg.header.stamp = get_ros_time(fast_lio_core_->get_lidar_end_time());
-            msg.header.frame_id = "camera_init";
+            msg.header.frame_id = frame_id_world_;
             pubLaserCloudEffect_->publish(msg);
         }
     }
@@ -453,9 +457,9 @@ void LaserMappingNode::process_bag_file(const std::string& bag_path)
                         pubOdomAftMapped_->publish(odom);
 
                         geometry_msgs::msg::TransformStamped trans;
-                        trans.header.frame_id = "camera_init";
+                        trans.header.frame_id = frame_id_world_;
                         trans.header.stamp = odom.header.stamp;
-                        trans.child_frame_id = "body";
+                        trans.child_frame_id = frame_id_body_;
                         trans.transform.translation.x = odom.pose.pose.position.x;
                         trans.transform.translation.y = odom.pose.pose.position.y;
                         trans.transform.translation.z = odom.pose.pose.position.z;
@@ -474,7 +478,7 @@ void LaserMappingNode::process_bag_file(const std::string& bag_path)
                         sensor_msgs::msg::PointCloud2 msg;
                         pcl::toROSMsg(*cloud_world, msg);
                         msg.header.stamp = get_ros_time(fast_lio_core_->get_lidar_end_time());
-                        msg.header.frame_id = "camera_init";
+                        msg.header.frame_id = frame_id_world_;
                         pubLaserCloudFull_->publish(msg);
                     }
 
@@ -484,7 +488,7 @@ void LaserMappingNode::process_bag_file(const std::string& bag_path)
                         sensor_msgs::msg::PointCloud2 msg;
                         pcl::toROSMsg(*cloud_body, msg);
                         msg.header.stamp = get_ros_time(fast_lio_core_->get_lidar_end_time());
-                        msg.header.frame_id = "body";
+                        msg.header.frame_id = frame_id_body_;
                         pubLaserCloudFull_body_->publish(msg);
                     }
 
@@ -494,7 +498,7 @@ void LaserMappingNode::process_bag_file(const std::string& bag_path)
                         sensor_msgs::msg::PointCloud2 msg;
                         pcl::toROSMsg(*cloud_effect, msg);
                         msg.header.stamp = get_ros_time(fast_lio_core_->get_lidar_end_time());
-                        msg.header.frame_id = "camera_init";
+                        msg.header.frame_id = frame_id_world_;
                         pubLaserCloudEffect_->publish(msg);
                     }
 
@@ -608,9 +612,9 @@ void LaserMappingNode::process_bag_file(const std::string& bag_path)
                     pubOdomAftMapped_->publish(odom);
 
                     geometry_msgs::msg::TransformStamped trans;
-                    trans.header.frame_id = "camera_init";
+                    trans.header.frame_id = frame_id_world_;
                     trans.header.stamp = odom.header.stamp;
-                    trans.child_frame_id = "body";
+                    trans.child_frame_id = frame_id_body_;
                     trans.transform.translation.x = odom.pose.pose.position.x;
                     trans.transform.translation.y = odom.pose.pose.position.y;
                     trans.transform.translation.z = odom.pose.pose.position.z;
@@ -629,7 +633,7 @@ void LaserMappingNode::process_bag_file(const std::string& bag_path)
                     sensor_msgs::msg::PointCloud2 msg;
                     pcl::toROSMsg(*cloud_world, msg);
                     msg.header.stamp = get_ros_time(fast_lio_core_->get_lidar_end_time());
-                    msg.header.frame_id = "camera_init";
+                    msg.header.frame_id = frame_id_world_;
                     pubLaserCloudFull_->publish(msg);
                 }
 
@@ -639,7 +643,7 @@ void LaserMappingNode::process_bag_file(const std::string& bag_path)
                     sensor_msgs::msg::PointCloud2 msg;
                     pcl::toROSMsg(*cloud_body, msg);
                     msg.header.stamp = get_ros_time(fast_lio_core_->get_lidar_end_time());
-                    msg.header.frame_id = "body";
+                    msg.header.frame_id = frame_id_body_;
                     pubLaserCloudFull_body_->publish(msg);
                 }
 
@@ -649,7 +653,7 @@ void LaserMappingNode::process_bag_file(const std::string& bag_path)
                     sensor_msgs::msg::PointCloud2 msg;
                     pcl::toROSMsg(*cloud_effect, msg);
                     msg.header.stamp = get_ros_time(fast_lio_core_->get_lidar_end_time());
-                    msg.header.frame_id = "camera_init";
+                    msg.header.frame_id = frame_id_world_;
                     pubLaserCloudEffect_->publish(msg);
                 }
 
