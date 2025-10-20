@@ -26,6 +26,13 @@
 #include "ikd-Tree/ikd_Tree.h"
 #include <rosgraph_msgs/msg/clock.hpp>
 #include <tf2_msgs/msg/tf_message.hpp>
+#include <thread>
+#include <mutex>
+#include <shared_mutex>
+#include <condition_variable>
+#include <deque>
+#include <atomic>
+
 
 #define INIT_TIME           (0.1)
 #define LASER_POINT_COV     (0.001)
@@ -103,7 +110,7 @@ public:
     std::deque<double> time_buffer_;
     std::mutex mtx_buffer_;
     std::condition_variable sig_buffer_;
-    bool flg_exit_ = false;
+    std::atomic<bool> flg_exit_ = false;
 
     bool get_publish_odometry(nav_msgs::msg::Odometry& odom, geometry_msgs::msg::Quaternion& quat);
     bool get_publish_path(nav_msgs::msg::Path& path, nav_msgs::msg::Odometry const & odom);
@@ -134,6 +141,7 @@ public:
 private:
     FastLioConfig config_;
 
+    std::shared_mutex mtx_ikdtree_;
     std::mutex map_mtx_;
     PointCloudXYZI::Ptr global_map_cloud_;
 
@@ -169,4 +177,19 @@ private:
     int pcd_save_interval_;
     int kdtree_delete_counter_ = 0;
     double kdtree_delete_time_ = 0.0;
+
+    void pruning_thread_main();
+
+    std::atomic<bool> is_map_pruning_ = false;
+    std::atomic<bool> map_pruning_finished_ = false;
+    BoxPointType pending_new_local_map_;
+
+    std::thread pruning_thread_;
+    std::mutex mtx_map_pruning_;
+    std::condition_variable sig_map_pruning_;
+    std::deque<BoxPointType> cub_to_rm_;
+    static constexpr size_t kMaxPruneQueue_ = 8;
+
+    void coalesce_boxes(std::vector<BoxPointType>& boxes) const;
+
 };

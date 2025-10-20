@@ -1,5 +1,6 @@
 #include "fast_lio/FastLioCore.h"
 #include "fast_lio/common_lib.h"
+#include <algorithm>
 
 // Global variables for local map management
 BoxPointType LocalMap_Points;
@@ -100,10 +101,23 @@ FastLioCore::FastLioCore(const FastLioConfig& config)
         string pos_log_dir = DEBUG_FILE_DIR(config_.log_path, "pos_log.txt");
         fp_log_ = fopen(pos_log_dir.c_str(),"w");
     }
+
+    pruning_thread_ = std::thread(&FastLioCore::pruning_thread_main, this);
 }
 
 FastLioCore::~FastLioCore()
 {
+    {
+        std::lock_guard<std::mutex> lock(mtx_map_pruning_);
+        flg_exit_.store(true, std::memory_order_release);
+        sig_map_pruning_.notify_one();
+    }
+
+    if (pruning_thread_.joinable())
+    {
+        pruning_thread_.join();
+    }
+
     if (config_.pcd_save_en && pcl_wait_save_->size() > 0) {
         save_pcd();
     }
@@ -185,6 +199,17 @@ bool FastLioCore::sync_packages(MeasureGroup &meas)
 
 FrameResult FastLioCore::process_frame(const MeasureGroup& meas)
 {
+    if (map_pruning_finished_.load(std::memory_order_acquire))
+    {
+        PointVector points_history;
+        {
+            std::shared_lock<std::shared_mutex> rlk(mtx_ikdtree_);
+            ikdtree_.acquire_removed_points(points_history);
+        }
+        map_pruning_finished_.store(false, std::memory_order_release);
+        is_map_pruning_.store(false, std::memory_order_release);
+    }
+
     if (flg_first_scan_)
     {
         first_lidar_time_ = meas.lidar_beg_time;
@@ -218,6 +243,7 @@ FrameResult FastLioCore::process_frame(const MeasureGroup& meas)
             {
                 pointBodyToWorld(&(feats_down_body_->points[i]), &(feats_down_world_->points[i]), state_point_);
             }
+            std::lock_guard<std::shared_mutex> lock(mtx_ikdtree_);
             ikdtree_.Build(feats_down_world_->points);
         }
         return FrameResult();
@@ -257,6 +283,11 @@ FrameResult FastLioCore::process_frame(const MeasureGroup& meas)
 
 void FastLioCore::lasermap_fov_segment()
 {
+    if (is_map_pruning_.load(std::memory_order_acquire))
+    {
+        return;
+    }
+
     cub_needrm.clear();
     kdtree_delete_counter_ = 0;
     kdtree_delete_time_ = 0.0;
@@ -300,14 +331,91 @@ void FastLioCore::lasermap_fov_segment()
             cub_needrm.push_back(tmp_boxpoints);
         }
     }
-    LocalMap_Points = New_LocalMap_Points;
 
-    PointVector points_history;
-    ikdtree_.acquire_removed_points(points_history);
+    // Defer the state update
+    pending_new_local_map_ = New_LocalMap_Points;
+    is_map_pruning_.store(true, std::memory_order_release);
 
-    double delete_begin = omp_get_wtime();
-    if(!cub_needrm.empty()) kdtree_delete_counter_ = ikdtree_.Delete_Point_Boxes(cub_needrm);
-    kdtree_delete_time_ = omp_get_wtime() - delete_begin;
+    // Send the deletion task to the worker thread
+    if (!cub_needrm.empty())
+    {
+        std::lock_guard<std::mutex> lock(mtx_map_pruning_);
+        if (cub_to_rm_.size() > kMaxPruneQueue_)
+        {
+            cub_to_rm_.erase(cub_to_rm_.begin(),
+                             cub_to_rm_.begin() + (cub_to_rm_.size() - kMaxPruneQueue_));
+        }
+
+        for (const auto& box : cub_needrm)
+        {
+            cub_to_rm_.push_back(box);
+        }
+
+        sig_map_pruning_.notify_one();
+    }
+}
+
+void FastLioCore::pruning_thread_main()
+{
+    RCLCPP_INFO(rclcpp::get_logger("fast_lio_core"), "Pruning thread started.");
+
+    while (!flg_exit_.load(std::memory_order_acquire))
+    {
+        std::deque<BoxPointType> current_cub_to_rm;
+        {
+            std::unique_lock<std::mutex> lock(mtx_map_pruning_);
+            sig_map_pruning_.wait(lock, [this]{
+                return flg_exit_.load(std::memory_order_acquire) || !cub_to_rm_.empty();
+            });
+
+            if (flg_exit_.load(std::memory_order_acquire))
+            {
+                break;
+            }
+
+            current_cub_to_rm.swap(cub_to_rm_);
+        }
+
+        if (!current_cub_to_rm.empty())
+        {
+            std::vector<BoxPointType> boxes_to_delete(current_cub_to_rm.begin(), current_cub_to_rm.end());
+            coalesce_boxes(boxes_to_delete);
+            // try to take the writer lock; if busy, requeue and retry later
+            bool deleted = false;
+            {
+                std::unique_lock<std::shared_mutex> wlk(mtx_ikdtree_, std::try_to_lock);
+                if (wlk.owns_lock())
+                {
+                    const double t0 = omp_get_wtime();
+                    kdtree_delete_counter_ = ikdtree_.Delete_Point_Boxes(boxes_to_delete);
+                    kdtree_delete_time_ = omp_get_wtime() - t0;
+                    {
+                        std::lock_guard<std::mutex> lck(map_mtx_);
+                        LocalMap_Points = pending_new_local_map_;
+                    }
+                    deleted = true;
+                }
+            }
+
+            if (deleted)
+            {
+                map_pruning_finished_.store(true, std::memory_order_release);
+            }
+            else
+            {
+                // couldn't get the writer lock; push back and try later
+                std::lock_guard<std::mutex> lock(mtx_map_pruning_);
+                for (auto it = boxes_to_delete.rbegin(); it != boxes_to_delete.rend(); ++it)
+                {
+                    cub_to_rm_.push_front(*it);
+                }
+
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }
+    }
+
+    RCLCPP_INFO(rclcpp::get_logger("fast_lio_core"), "Pruning thread stopped.");
 }
 
 void FastLioCore::map_incremental()
@@ -349,8 +457,11 @@ void FastLioCore::map_incremental()
         }
     }
 
-    ikdtree_.Add_Points(PointToAdd, true);
-    ikdtree_.Add_Points(PointNoNeedDownsample, false);
+    {
+        std::lock_guard<std::shared_mutex> lock(mtx_ikdtree_);
+        ikdtree_.Add_Points(PointToAdd, true);
+        ikdtree_.Add_Points(PointNoNeedDownsample, false);
+    }
 
     if (config_.map_pub_en) {
         std::lock_guard<std::mutex> lock(map_mtx_);
@@ -483,49 +594,55 @@ void FastLioCore::h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<do
     laserCloudOri_->clear();
     corr_normvect_->clear();
 
-    #ifdef MP_EN
+    {
+        std::shared_lock<std::shared_mutex> rlk(mtx_ikdtree_);
+
+        #ifdef MP_EN
         omp_set_num_threads(MP_PROC_NUM);
         #pragma omp parallel for
-    #endif
-    for (int i = 0; i < feats_down_size_; i++)
-    {
-        PointTypeNorm &point_body  = feats_down_body_->points[i]; 
-        PointTypeNorm &point_world = feats_down_world_->points[i]; 
-
-        V3D p_body(point_body.x, point_body.y, point_body.z);
-        V3D p_global(s.rot * (s.offset_R_L_I*p_body + s.offset_T_L_I) + s.pos);
-        point_world.x = p_global(0);
-        point_world.y = p_global(1);
-        point_world.z = p_global(2);
-        point_world.intensity = point_body.intensity;
-
-        vector<float> pointSearchSqDis(NUM_MATCH_POINTS);
-
-        auto &points_near = Nearest_Points_[i];
-
-        if (ekfom_data.converge)
+        #endif
+        for (int i = 0; i < feats_down_size_; i++)
         {
-            ikdtree_.Nearest_Search(point_world, NUM_MATCH_POINTS, points_near, pointSearchSqDis);
-            point_selected_surf_[i] = points_near.size() < NUM_MATCH_POINTS ? false : pointSearchSqDis[NUM_MATCH_POINTS - 1] > 5 ? false : true;
-        }
+            PointTypeNorm &point_body  = feats_down_body_->points[i]; 
+            PointTypeNorm &point_world = feats_down_world_->points[i]; 
 
-        if (!point_selected_surf_[i]) continue;
+            V3D p_body(point_body.x, point_body.y, point_body.z);
+            V3D p_global(s.rot * (s.offset_R_L_I*p_body + s.offset_T_L_I) + s.pos);
+            point_world.x = p_global(0);
+            point_world.y = p_global(1);
+            point_world.z = p_global(2);
+            point_world.intensity = point_body.intensity;
 
-        VF(4) pabcd;
-        point_selected_surf_[i] = false;
-        if (esti_plane(pabcd, points_near, 0.1f))
-        {
-            float pd2 = pabcd(0) * point_world.x + pabcd(1) * point_world.y + pabcd(2) * point_world.z + pabcd(3);
-            float s = 1 - 0.9 * fabs(pd2) / sqrt(p_body.norm());
+            vector<float> pointSearchSqDis(NUM_MATCH_POINTS);
 
-            if (s > 0.9)
+            auto &points_near = Nearest_Points_[i];
+
+            if (ekfom_data.converge)
             {
-                point_selected_surf_[i] = true;
-                normvec_->points[i].x = pabcd(0);
-                normvec_->points[i].y = pabcd(1);
-                normvec_->points[i].z = pabcd(2);
-                normvec_->points[i].intensity = pd2;
-                res_last_[i] = abs(pd2);
+                ikdtree_.Nearest_Search(point_world, NUM_MATCH_POINTS, points_near, pointSearchSqDis);
+                point_selected_surf_[i] =
+                    (points_near.size() < NUM_MATCH_POINTS) ? false
+                    : (pointSearchSqDis[NUM_MATCH_POINTS - 1] > 5) ? false : true;
+            }
+
+            if (!point_selected_surf_[i]) continue;
+
+            VF(4) pabcd;
+            point_selected_surf_[i] = false;
+            if (esti_plane(pabcd, points_near, 0.1f))
+            {
+                float pd2 = pabcd(0) * point_world.x + pabcd(1) * point_world.y + pabcd(2) * point_world.z + pabcd(3);
+                float s = 1 - 0.9 * fabs(pd2) / sqrt(p_body.norm());
+
+                if (s > 0.9)
+                {
+                    point_selected_surf_[i] = true;
+                    normvec_->points[i].x = pabcd(0);
+                    normvec_->points[i].y = pabcd(1);
+                    normvec_->points[i].z = pabcd(2);
+                    normvec_->points[i].intensity = pd2;
+                    res_last_[i] = abs(pd2);
+                }
             }
         }
     }
@@ -579,6 +696,43 @@ void FastLioCore::h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<do
 
         ekfom_data.h(i) = -norm_p.intensity;
     }
+}
+
+
+static inline void expand_box(BoxPointType& acc, const BoxPointType& b)
+{
+    for (int d = 0; d < 3; ++d)
+    {
+        acc.vertex_min[d] = std::min(acc.vertex_min[d], b.vertex_min[d]);
+        acc.vertex_max[d] = std::max(acc.vertex_max[d], b.vertex_max[d]);
+    }
+}
+
+void FastLioCore::coalesce_boxes(std::vector<BoxPointType>& boxes) const
+{
+    if (boxes.size() <= 8)
+    {
+        // Leave small batches alone
+        return;
+    }
+
+    const size_t n   = boxes.size();
+    const size_t mid = n / 2;
+
+    BoxPointType A = boxes[0];
+    for (size_t i = 1; i < mid; ++i) {
+        expand_box(A, boxes[i]);
+    }
+
+    BoxPointType B = boxes[mid];
+    for (size_t i = mid + 1; i < n; ++i) {
+        expand_box(B, boxes[i]);
+    }
+
+    // Replace input with up to two merged boxes
+    boxes.clear();
+    boxes.push_back(A);
+    boxes.push_back(B);
 }
 
 void FastLioCore::accumulate_map_points()
