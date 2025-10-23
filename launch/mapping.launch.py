@@ -25,6 +25,7 @@ def generate_launch_description():
     qos = LaunchConfiguration('qos')
     map_frame = LaunchConfiguration('map_frame')
     robot_frame = LaunchConfiguration('robot_frame')
+    pub_map = LaunchConfiguration('pub_map')
 
     declare_use_sim_time_cmd = DeclareLaunchArgument(
         'use_sim_time', default_value='false',
@@ -62,6 +63,10 @@ def generate_launch_description():
         'robot_frame', default_value='body',
         description='Name of the robot frame'
     )
+    declare_pub_map_cmd = DeclareLaunchArgument(
+        'pub_map', default_value='true',
+        description='Publish the map or not'
+    )
 
     fast_lio_node = Node(
         package='fast_lio',
@@ -71,6 +76,7 @@ def generate_launch_description():
                     {'bag_file': bag_file},
                     {'qos_profile': qos},
                     {'frames': {'world': map_frame, 'body':robot_frame}},
+                    {'publish': {'map_en': pub_map}},
                     {'common': {'lid_topic': '/livox/points', 'imu_topic':'/livox/imu'}}],
         output='screen'
     )
@@ -91,6 +97,7 @@ def generate_launch_description():
     ld.add_action(declare_qos_cmd)
     ld.add_action(declare_map_frame_cmd)
     ld.add_action(declare_robot_frame_cmd)
+    ld.add_action(declare_pub_map_cmd)
 
     ld.add_action(fast_lio_node)
     ld.add_action(rviz_node)
