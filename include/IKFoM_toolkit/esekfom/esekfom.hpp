@@ -1815,6 +1815,9 @@ public:
 
 			//K_x = K_ * h_x_;
 			Matrix<scalar_type, n, 1> dx_ = K_h + (K_x - Matrix<scalar_type, n, n>::Identity()) * dx_new; 
+
+			dx_ = this->check_safe_update(dx_);
+
 			state x_before = x_;
 			x_.boxplus(dx_);
 			dyn_share.converge = true;
@@ -1994,9 +1997,10 @@ private:
         }
         double angular_dis = temp_vec.block( 0, 0, 3, 1 ).norm() * 57.3;
         double pos_dis = temp_vec.block( 3, 0, 3, 1 ).norm();
-        if ( angular_dis >= 20 || pos_dis > 1 )
+
+	if (angular_dis >= 6 || pos_dis > 0.03)
         {
-            printf( "Angular dis = %.2f, pos dis = %.2f\r\n", angular_dis, pos_dis );
+            printf( "Angular dis = %.2f, pos dis = %.4f\r\n", angular_dis, pos_dis );
             temp_vec.setZero();
         }
         return temp_vec;
