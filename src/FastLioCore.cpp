@@ -163,7 +163,42 @@ bool FastLioCore::sync_packages(MeasureGroup &meas)
         return false;
     }
 
-    double first_scan_start_time = time_buffer_.front();
+    const double period = 1.0 / std::max(1, config_.scan_rate);
+    const double MAX_LAG = std::clamp(3.0 * period, 0.1, 0.7);
+    int drops = 0;
+    const int MAX_DROPS_PER_SYNC = 4;
+
+    auto backlog_seconds = [&]() -> double {
+        double t_front  = time_buffer_.front();
+        double t_latest = !imu_buffer_.empty() ? get_time_sec(imu_buffer_.back()->header.stamp)
+                                               : time_buffer_.back();
+        return t_latest - t_front;
+    };
+
+    while (lidar_buffer_.size() >= 2 && backlog_seconds() > MAX_LAG && drops < MAX_DROPS_PER_SYNC)
+    {
+        // Drop the oldest LiDAR scan and IMU samples
+	RCLCPP_INFO(rclcpp::get_logger("fast_lio_core"), "Dropping old scans");
+
+        const double old_first = time_buffer_.front();
+        const double old_second = time_buffer_.at(1);
+
+        while (!imu_buffer_.empty() &&
+               get_time_sec(imu_buffer_.front()->header.stamp) < old_second)
+        {
+            imu_buffer_.pop_front();
+        }
+        lidar_buffer_.pop_front();
+        time_buffer_.pop_front();
+        ++drops;
+    }
+
+    // If we dropped too much wait for more data
+    if (lidar_buffer_.size() < 2) {
+        return false;
+    }
+
+    double first_scan_start_time  = time_buffer_.front();
     double second_scan_start_time = time_buffer_.at(1);
 
     auto it_imu = imu_buffer_.begin();

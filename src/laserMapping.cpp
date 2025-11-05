@@ -190,35 +190,43 @@ LaserMappingNode::~LaserMappingNode()
 
 void LaserMappingNode::standard_pcl_cbk(const sensor_msgs::msg::PointCloud2::UniquePtr msg)
 {
-    std::lock_guard<std::mutex> lock(fast_lio_core_->mtx_buffer_);
     double cur_time = get_time_sec(msg->header.stamp);
 
     PointCloudXYZI::Ptr ptr(new PointCloudXYZI());
     fast_lio_core_->p_pre_->process(msg, ptr);
 
-    fast_lio_core_->lidar_buffer_.push_back(ptr);
-    fast_lio_core_->time_buffer_.push_back(cur_time);
+    {
+        std::lock_guard<std::mutex> lock(fast_lio_core_->mtx_buffer_);
+        fast_lio_core_->lidar_buffer_.push_back(ptr);
+        fast_lio_core_->time_buffer_.push_back(cur_time);
+    }
+
     fast_lio_core_->sig_buffer_.notify_one();
 }
 
 void LaserMappingNode::livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::UniquePtr msg)
 {
-    std::lock_guard<std::mutex> lock(fast_lio_core_->mtx_buffer_);
     double cur_time = get_time_sec(msg->header.stamp);
 
     PointCloudXYZI::Ptr ptr(new PointCloudXYZI());
     fast_lio_core_->p_pre_->process(msg, ptr);
 
-    fast_lio_core_->lidar_buffer_.push_back(ptr);
-    fast_lio_core_->time_buffer_.push_back(cur_time);
+    {
+        std::lock_guard<std::mutex> lock(fast_lio_core_->mtx_buffer_);
+        fast_lio_core_->lidar_buffer_.push_back(ptr);
+        fast_lio_core_->time_buffer_.push_back(cur_time);
+    }
+
     fast_lio_core_->sig_buffer_.notify_one();
 }
 
 void LaserMappingNode::imu_cbk(const sensor_msgs::msg::Imu::UniquePtr msg_in)
 {
-    std::lock_guard<std::mutex> lock(fast_lio_core_->mtx_buffer_);
     sensor_msgs::msg::Imu::SharedPtr msg(new sensor_msgs::msg::Imu(*msg_in));
-    fast_lio_core_->imu_buffer_.push_back(msg);
+    {
+        std::lock_guard<std::mutex> lock(fast_lio_core_->mtx_buffer_);
+        fast_lio_core_->imu_buffer_.push_back(msg);
+    }
     fast_lio_core_->sig_buffer_.notify_one();
 }
 
