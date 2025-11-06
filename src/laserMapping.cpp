@@ -40,12 +40,13 @@
 #include <rosbag2_cpp/readers/sequential_reader.hpp>
 #include <rosbag2_storage/storage_options.hpp>
 
+using rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface;
+
 std::string tf_topic = "/tf";
 std::string tf_static_topic = "/tf_static";
 
-LaserMappingNode::LaserMappingNode(const rclcpp::NodeOptions& options) : Node("laser_mapping", options)
+LaserMappingNode::LaserMappingNode(const rclcpp::NodeOptions& options) : rclcpp_lifecycle::LifecycleNode("laser_mapping", options)
 {
-    FastLioConfig config;
     this->declare_parameter<bool>("publish.path_en", true);
     this->declare_parameter<bool>("publish.effect_map_en", false);
     this->declare_parameter<bool>("publish.map_en", false);
@@ -88,8 +89,20 @@ LaserMappingNode::LaserMappingNode(const rclcpp::NodeOptions& options) : Node("l
     this->declare_parameter<std::string>("qos_profile", "default");
     this->declare_parameter<std::string>("frames.world", "camera_init");
     this->declare_parameter<std::string>("frames.body", "body");
+}
 
+LaserMappingNode::~LaserMappingNode()
+{
+    fast_lio_core_->flg_exit_ = true;
+    fast_lio_core_->sig_buffer_.notify_all();
+    if (processing_thread_.joinable()) {
+        processing_thread_.join();
+    }
+}
 
+LifecycleNodeInterface::CallbackReturn LaserMappingNode::on_configure(const rclcpp_lifecycle::State&)
+{
+    FastLioConfig config;
     this->get_parameter("publish.path_en", path_en_);
     this->get_parameter("publish.effect_map_en", effect_pub_en_);
     this->get_parameter("publish.map_en", map_pub_en_);
@@ -166,26 +179,78 @@ LaserMappingNode::LaserMappingNode(const rclcpp::NodeOptions& options) : Node("l
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
     static_tf_broadcaster_ = std::make_unique<tf2_ros::StaticTransformBroadcaster>(*this);
 
-
-    auto map_period_ms = std::chrono::milliseconds(1000);
-    map_pub_timer_ = rclcpp::create_timer(this, this->get_clock(), map_period_ms, std::bind(&LaserMappingNode::map_publish_callback, this));
     map_save_srv_ = this->create_service<std_srvs::srv::Trigger>("map_save", std::bind(&LaserMappingNode::map_save_callback, this, std::placeholders::_1, std::placeholders::_2));
 
     path_.header.stamp = this->get_clock()->now();
     path_.header.frame_id = frame_id_world_;
 
-    processing_thread_ = std::thread(&LaserMappingNode::processing_thread_func, this);
-
-    RCLCPP_INFO(this->get_logger(), "Node init finished.");
+    RCLCPP_INFO(get_logger(), "Configured.");
+    return LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
-LaserMappingNode::~LaserMappingNode()
+LifecycleNodeInterface::CallbackReturn LaserMappingNode::on_activate(const rclcpp_lifecycle::State&)
 {
+    // Start background processing
+    auto map_period_ms = std::chrono::milliseconds(1000);
+    map_pub_timer_ = rclcpp::create_timer(this, this->get_clock(), map_period_ms, std::bind(&LaserMappingNode::map_publish_callback, this));
+
+    fast_lio_core_->flg_exit_ = false;
+    processing_thread_ = std::thread(&LaserMappingNode::processing_thread_func, this);
+    RCLCPP_INFO(get_logger(), "Activated.");
+    return LifecycleNodeInterface::CallbackReturn::SUCCESS;
+}
+
+
+LifecycleNodeInterface::CallbackReturn LaserMappingNode::on_deactivate(const rclcpp_lifecycle::State&)
+{
+    fast_lio_core_->save_pcd();
+
+    // Stop background thread
     fast_lio_core_->flg_exit_ = true;
     fast_lio_core_->sig_buffer_.notify_all();
     if (processing_thread_.joinable()) {
         processing_thread_.join();
     }
+    RCLCPP_INFO(get_logger(), "Deactivated.");
+    return LifecycleNodeInterface::CallbackReturn::SUCCESS;
+}
+
+LifecycleNodeInterface::CallbackReturn LaserMappingNode::on_cleanup(const rclcpp_lifecycle::State&)
+{
+    // Actually free resources
+    map_pub_timer_.reset();
+    map_save_srv_.reset();
+    pubLaserCloudFull_.reset();
+    pubLaserCloudFull_body_.reset();
+    pubLaserCloudEffect_.reset();
+    pubLaserCloudMap_.reset();
+    pubOdomAftMapped_.reset();
+    pubPath_.reset();
+    pubClock_.reset();
+    sub_imu_.reset();
+    sub_pcl_pc_.reset();
+    sub_pcl_livox_.reset();
+    tf_broadcaster_.reset();
+    static_tf_broadcaster_.reset();
+    fast_lio_core_.reset();
+
+    RCLCPP_INFO(get_logger(), "Cleaned up.");
+    return LifecycleNodeInterface::CallbackReturn::SUCCESS;
+}
+
+LifecycleNodeInterface::CallbackReturn LaserMappingNode::on_shutdown(const rclcpp_lifecycle::State&)
+{
+    // Ensure the thread is stopped
+    if(fast_lio_core_)
+    {
+        fast_lio_core_->flg_exit_ = true;
+        fast_lio_core_->sig_buffer_.notify_all();
+    }
+    if (processing_thread_.joinable()) {
+        processing_thread_.join();
+    }
+    RCLCPP_INFO(get_logger(), "Shutting down.");
+    return LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
 void LaserMappingNode::standard_pcl_cbk(const sensor_msgs::msg::PointCloud2::UniquePtr msg)

@@ -3,6 +3,8 @@
 #include "fast_lio/FastLioCore.h"
 
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
+#include <lifecycle_msgs/msg/transition.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <nav_msgs/msg/odometry.hpp>
@@ -16,13 +18,19 @@
 #include <rosbag2_cpp/readers/sequential_reader.hpp>
 #include <rosbag2_storage/storage_options.hpp>
 
-class LaserMappingNode : public rclcpp::Node
+class LaserMappingNode : public rclcpp_lifecycle::LifecycleNode
 {
 public:
     LaserMappingNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
     ~LaserMappingNode();
 
     void process_bag_file(const std::string& bag_path);
+
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_configure(const rclcpp_lifecycle::State& state) override;
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_activate(const rclcpp_lifecycle::State& state) override;
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_deactivate(const rclcpp_lifecycle::State& state) override;
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_cleanup(const rclcpp_lifecycle::State& state) override;
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_shutdown(const rclcpp_lifecycle::State& state) override;
 
 private:
     void standard_pcl_cbk(const sensor_msgs::msg::PointCloud2::UniquePtr msg);

@@ -14,6 +14,8 @@ int main(int argc, char** argv)
 
     {
         auto node = std::make_shared<LaserMappingNode>();
+        node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE);
+        node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_ACTIVATE);
 
         std::string bag_file;
         node->get_parameter("bag_file", bag_file);
@@ -21,7 +23,10 @@ int main(int argc, char** argv)
         if (bag_file.empty())
         {
             RCLCPP_INFO(node->get_logger(), "Starting in LIVE mode.");
-            rclcpp::spin(node);
+
+            rclcpp::executors::SingleThreadedExecutor exec;
+            exec.add_node(node->get_node_base_interface());
+            exec.spin();
         }
         else
         {

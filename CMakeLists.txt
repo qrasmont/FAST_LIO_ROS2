@@ -43,6 +43,8 @@ find_path(MATPLOTLIB_CPP_INCLUDE_DIRS "matplotlibcpp.h")
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
+find_package(rclcpp_lifecycle REQUIRED)
+find_package(lifecycle_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -72,6 +74,11 @@ set(dependencies
   rosbag2_cpp
   rosbag2_storage
   tf2_msgs
+)
+
+set(node_only_deps
+  rclcpp_lifecycle
+  lifecycle_msgs
 )
 
 # Thirdparty libraries
@@ -132,7 +139,7 @@ endif()
 # Define the fastlio_mapping ROS node executable
 add_executable(fastlio_mapping src/laserMapping.cpp src/main.cpp)
 target_link_libraries(fastlio_mapping fast_lio_core)
-
+ament_target_dependencies(fastlio_mapping ${dependencies} ${node_only_deps})
 
 # ---------------- Install --------------- #
 # Install the standalone node

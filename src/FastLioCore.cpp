@@ -118,9 +118,8 @@ FastLioCore::~FastLioCore()
         pruning_thread_.join();
     }
 
-    if (config_.pcd_save_en && pcl_wait_save_->size() > 0) {
-        save_pcd();
-    }
+    save_pcd();
+
     if (fp_log_) {
         fclose(fp_log_);
     }
@@ -511,7 +510,7 @@ void FastLioCore::map_incremental()
 
 void FastLioCore::save_pcd()
 {
-    if (pcl_wait_save_->size() > 0)
+    if (config_.pcd_save_en && pcl_wait_save_->size() > 0)
     {
         pcl::PCDWriter pcd_writer;
         std::string file_name = config_.pcd_save_path + "map.pcd";
